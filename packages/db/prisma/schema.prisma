@@ -1,0 +1,349 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm, pgvector(map: "vector")]
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  bio          String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   Membership[]
+  works         Work[]
+  annotations   Annotation[]
+  threads       AnnotationThread[]
+  subscriptions Subscription[]     @relation("SubscriberSubscriptions")
+  subscribers   Subscription[]     @relation("WriterSubscriptions")
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+  aiAnalyses    AiAnalysis[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Organization (Multi-tenancy root) ───────────────────────────────────────
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  rules       String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships    Membership[]
+  works          Work[]
+  critiqueRounds CritiqueRound[]
+  invites        Invite[]
+
+  @@map("organizations")
+}
+
+model Membership {
+  id             String         @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MembershipRole
+  joinedAt       DateTime       @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("memberships")
+}
+
+enum MembershipRole {
+  OWNER
+  MODERATOR
+  MEMBER
+  SUBSCRIBER
+}
+
+model Invite {
+  id             String         @id @default(cuid())
+  organizationId String
+  email          String
+  token          String         @unique
+  role           MembershipRole @default(MEMBER)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@map("invites")
+}
+
+// ─── Works ───────────────────────────────────────────────────────────────────
+
+model Work {
+  id             String    @id @default(cuid())
+  title          String
+  genre          String?
+  tags           String[]
+  state          WorkState @default(DRAFT)
+  authorId       String
+  organizationId String?
+  coverImageUrl  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  author         User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  versions       WorkVersion[]
+  critiqueRounds CritiqueRound[]
+  publication    Publication?
+  aiAnalyses     AiAnalysis[]
+  embedding      WorkEmbedding?
+
+  @@index([authorId, state])
+  @@index([organizationId, state])
+  // GIN index for tags array and full-text search — added via migration SQL
+  @@map("works")
+}
+
+enum WorkState {
+  DRAFT
+  SUBMITTED
+  CRITIQUE_OPEN
+  IN_SESSION
+  REVEAL
+  REVISED
+  PUBLISHED
+  WITHDRAWN
+  REJECTED
+}
+
+model WorkVersion {
+  id         String   @id @default(cuid())
+  workId     String
+  content    Json     // Lexical editor JSON state
+  versionNum Int
+  createdAt  DateTime @default(now())
+
+  work        Work         @relation(fields: [workId], references: [id], onDelete: Cascade)
+  annotations Annotation[]
+
+  @@unique([workId, versionNum])
+  @@index([workId])
+  @@map("work_versions")
+}
+
+// ─── Critique ─────────────────────────────────────────────────────────────────
+
+model CritiqueRound {
+  id             String             @id @default(cuid())
+  workId         String
+  organizationId String
+  openAt         DateTime
+  closeAt        DateTime
+  revealAt       DateTime
+  isAnonymous    Boolean            @default(true)
+  state          CritiqueRoundState @default(SCHEDULED)
+  createdAt      DateTime           @default(now())
+
+  work         Work         @relation(fields: [workId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+  annotations  Annotation[]
+
+  @@index([workId])
+  @@map("critique_rounds")
+}
+
+enum CritiqueRoundState {
+  SCHEDULED
+  OPEN
+  IN_SESSION
+  CLOSED
+  REVEALED
+}
+
+model Annotation {
+  id              String   @id @default(cuid())
+  workVersionId   String
+  critiqueRoundId String?
+  authorId        String
+  pseudonym       String?  // set during anonymous rounds, revealed after revealAt
+  startOffset     Int
+  endOffset       Int
+  quote           String   // the selected text, stored for resilience against content changes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workVersion   WorkVersion    @relation(fields: [workVersionId], references: [id], onDelete: Cascade)
+  critiqueRound CritiqueRound? @relation(fields: [critiqueRoundId], references: [id])
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  threads       AnnotationThread[]
+  endorsements  AnnotationEndorsement[]
+
+  @@index([workVersionId])
+  @@index([critiqueRoundId])
+  @@map("annotations")
+}
+
+model AnnotationThread {
+  id           String   @id @default(cuid())
+  annotationId String
+  authorId     String
+  content      String
+  pseudonym    String?
+  createdAt    DateTime @default(now())
+
+  annotation Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([annotationId])
+  @@map("annotation_threads")
+}
+
+model AnnotationEndorsement {
+  id           String   @id @default(cuid())
+  annotationId String
+  userId       String
+  createdAt    DateTime @default(now())
+
+  annotation Annotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+
+  @@unique([annotationId, userId])
+  @@map("annotation_endorsements")
+}
+
+// ─── Publishing ───────────────────────────────────────────────────────────────
+
+model Publication {
+  id          String                @id @default(cuid())
+  workId      String                @unique
+  authorId    String
+  visibility  PublicationVisibility @default(PUBLIC)
+  publishedAt DateTime              @default(now())
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([authorId, publishedAt])
+  @@map("publications")
+}
+
+enum PublicationVisibility {
+  PUBLIC
+  SUBSCRIBERS_ONLY
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  subscriberId     String
+  writerId         String
+  stripeSubId      String?            @unique
+  status           SubscriptionStatus @default(ACTIVE)
+  currentPeriodEnd DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  subscriber User @relation("SubscriberSubscriptions", fields: [subscriberId], references: [id], onDelete: Cascade)
+  writer     User @relation("WriterSubscriptions", fields: [writerId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriberId, writerId])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  UNPAID
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  CRITIQUE_ROUND_OPENED
+  CRITIQUE_ROUND_CLOSED
+  ANNOTATION_CREATED
+  ANNOTATION_REPLY
+  WORK_PUBLISHED
+  NEW_SUBSCRIBER
+  AI_ANALYSIS_READY
+}
+
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+model AiAnalysis {
+  id            String         @id @default(cuid())
+  workId        String
+  workVersionId String
+  authorId      String
+  type          AiAnalysisType
+  result        Json
+  promptHash    String         // SHA-256 of the prompt — used as Redis cache key
+  tokensUsed    Int
+  createdAt     DateTime       @default(now())
+
+  work   Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([workId, type])
+  @@map("ai_analyses")
+}
+
+enum AiAnalysisType {
+  STRUCTURAL
+  CRITIQUE_SUGGESTIONS
+  SIMILAR_WORKS
+}
+
+model WorkEmbedding {
+  id        String   @id @default(cuid())
+  workId    String   @unique
+  // pgvector column — Prisma does not natively support vector types yet.
+  // This is managed via a raw migration: ALTER TABLE work_embeddings ADD COLUMN embedding vector(1536)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@map("work_embeddings")
+}
