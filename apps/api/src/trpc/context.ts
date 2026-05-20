@@ -1,6 +1,7 @@
 import type { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify'
 import { prisma } from '@folio/db'
 import type { User } from '@folio/db'
+import { verifyAccessToken } from '../domains/identity/auth.tokens.js'
 
 export type Context = {
   req: CreateFastifyContextOptions['req']
@@ -21,8 +22,17 @@ export async function createContext({ req, res }: CreateFastifyContextOptions): 
     }
   }
 
-  // ── JWT verification (Phase 2) ───────────────────────────────────────────
-  // TODO: parse Authorization header or cookie, verify JWT, set user
+  if (!user) {
+    const authHeader = req.headers.authorization
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      try {
+        const { userId } = verifyAccessToken(authHeader.slice(7))
+        user = await prisma.user.findUnique({ where: { id: userId } })
+      } catch {
+        // Invalid or expired access token — leave user null
+      }
+    }
+  }
 
   return { req, res, user }
 }

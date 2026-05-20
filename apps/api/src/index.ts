@@ -1,10 +1,15 @@
-import 'dotenv/config'
+import { config } from 'dotenv'
+import { dirname, resolve } from 'path'
+
+// Load monorepo root .env (pnpm dev runs with cwd apps/api)
+config({ path: resolve(dirname(__dirname), '../../../.env') })
 export type { AppRouter } from './trpc/router.js'
 import Fastify from 'fastify'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
 import fastifyHelmet from '@fastify/helmet'
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
+import { registerAuthRoutes } from './domains/identity/auth.routes.js'
 import { createContext } from './trpc/context.js'
 import { appRouter } from './trpc/router.js'
 
@@ -24,6 +29,8 @@ async function bootstrap() {
   })
 
   await server.register(fastifyCookie)
+
+  await registerAuthRoutes(server)
 
   await server.register(fastifyTRPCPlugin, {
     prefix: '/trpc',

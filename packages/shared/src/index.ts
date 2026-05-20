@@ -1,5 +1,5 @@
 export * from './schemas/user'
-export * from './schemas/organization'
+export * from './schemas/workshop'
 export * from './schemas/work'
 export * from './schemas/annotation'
 export * from './schemas/pagination'

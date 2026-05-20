@@ -21,8 +21,6 @@
     "@folio/shared": "workspace:*",
     "@trpc/server": "^11.1.2",
     "argon2": "^0.43.0",
-    "bullmq": "^5.45.4",
-    "ioredis": "^5.6.0",
     "jsonwebtoken": "^9.0.2",
     "fastify": "^5.3.2",
     "pino-pretty": "^13.0.0",

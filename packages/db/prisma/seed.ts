@@ -30,7 +30,7 @@ async function main() {
     },
   })
 
-  const workshop = await db.organization.upsert({
+  const workshop = await db.workshop.upsert({
     where: { slug: 'midnight-ink' },
     update: {},
     create: {
@@ -43,15 +43,15 @@ async function main() {
   })
 
   await db.membership.upsert({
-    where: { userId_organizationId: { userId: alice.id, organizationId: workshop.id } },
+    where: { userId_workshopId: { userId: alice.id, workshopId: workshop.id } },
     update: {},
-    create: { userId: alice.id, organizationId: workshop.id, role: MembershipRole.OWNER },
+    create: { userId: alice.id, workshopId: workshop.id, role: MembershipRole.OWNER },
   })
 
   await db.membership.upsert({
-    where: { userId_organizationId: { userId: bob.id, organizationId: workshop.id } },
+    where: { userId_workshopId: { userId: bob.id, workshopId: workshop.id } },
     update: {},
-    create: { userId: bob.id, organizationId: workshop.id, role: MembershipRole.MEMBER },
+    create: { userId: bob.id, workshopId: workshop.id, role: MembershipRole.MEMBER },
   })
 
   console.warn(`Seeded:
