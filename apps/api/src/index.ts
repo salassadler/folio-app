@@ -1,8 +1,8 @@
 import { config } from 'dotenv'
-import { dirname, resolve } from 'path'
+import { resolve } from 'path'
 
-// Load monorepo root .env (pnpm dev runs with cwd apps/api)
-config({ path: resolve(dirname(__dirname), '../../../.env') })
+// Load monorepo root .env (__dirname is apps/api/src in dev, apps/api/dist in prod)
+config({ path: resolve(__dirname, '../../../.env') })
 export type { AppRouter } from './trpc/router.js'
 import Fastify from 'fastify'
 import fastifyCookie from '@fastify/cookie'

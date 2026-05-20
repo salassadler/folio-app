@@ -1,3 +1,4 @@
+import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { createBrowserRouter } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 
@@ -20,6 +21,24 @@ export const router = createBrowserRouter([
       {
         index: true,
         lazy: () => import('./pages/HomePage').then((m) => ({ Component: m.HomePage })),
+      },
+      {
+        path: 'login',
+        lazy: () => import('./pages/LoginPage').then((m) => ({ Component: m.LoginPage })),
+      },
+      {
+        path: 'register',
+        lazy: () => import('./pages/RegisterPage').then((m) => ({ Component: m.RegisterPage })),
+      },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          {
+            path: 'workshops',
+            lazy: () =>
+              import('./pages/WorkshopsPage').then((m) => ({ Component: m.WorkshopsPage })),
+          },
+        ],
       },
     ],
   },

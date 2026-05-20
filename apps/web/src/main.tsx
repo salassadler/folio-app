@@ -7,11 +7,18 @@ import { httpBatchLink } from '@trpc/client'
 import { trpc } from './lib/trpc'
 import { queryClient } from './lib/queryClient'
 import { router } from './router'
+import { trpcFetch } from './lib/trpcClient'
+import { trpcRefreshLink } from './lib/trpcRefreshLink'
+import { AuthProvider } from './providers/AuthProvider'
 
 const trpcClient = trpc.createClient({
   links: [
+    trpcRefreshLink,
     httpBatchLink({
       url: '/trpc',
+      fetch(url, options) {
+        return trpcFetch(url, options as RequestInit | undefined)
+      },
     }),
   ],
 })
@@ -23,7 +30,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
         <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>
     </trpc.Provider>
